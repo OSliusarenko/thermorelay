@@ -1,0 +1,3 @@
+#!/bin/bash
+msp430-gcc -Os -mmcu=msp430f2013 -o temp.elf main.c
+msp430-size temp.elf
