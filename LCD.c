@@ -1,7 +1,7 @@
 #define LCM_DIR P1DIR
 #define LCM_OUT P1OUT
 
-#define RS  BIT2
+#define RS  BIT2  // it's better not to change these
 #define EN  BIT3
 #define D4  BIT4
 #define D5  BIT5
@@ -17,9 +17,9 @@
 unsigned char overflows;
 
 /*  Function Definitions  */
-void LCM_init(void);
+inline void LCM_init(void);
 void pulse(void);
-void clear(void);
+inline void clear(void);
 void SendByte(char, char);
 void MoveCursor(char, char);
 void PrintStr(char *);
@@ -51,7 +51,7 @@ void SendByte(char ByteToSend, char IsData) {
 } // SendByte
 
 
-void LCM_init(void) {
+inline void LCM_init(void) {
     LCM_DIR |= MASK;
     LCM_OUT &= ~MASK;
     
@@ -66,7 +66,7 @@ void LCM_init(void) {
 } // LCM_init
 
 
-void clear(void) {
+inline void clear(void) {
     SendByte(0x01, FALSE);
     SendByte(0x02, FALSE);
     __delay_cycles(100000);

@@ -3,7 +3,6 @@
 #include "LCD.c"
 #include "SD16.c"
 
-
 void main(void) {
     WDTCTL = WDTPW + WDTHOLD;
     
@@ -46,11 +45,15 @@ void __attribute__ ((interrupt(PORT2_VECTOR))) P2_ISR (void)
     {
         case BIT7:
           P2IFG &= ~BIT7;
-          btn_sel_pressed = TRUE;
+          if(btn_delay==0)
+            btn_sel_pressed = TRUE;
+          return;
         
         case BIT6:
           P2IFG &= ~BIT6;
-          btn_next_pressed = TRUE;
+          if(btn_delay==0)
+            btn_next_pressed = TRUE;
+          return;
         
         default:
           P2IFG = 0;

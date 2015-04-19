@@ -1,26 +1,20 @@
-static unsigned int warm_delay, cold_delay;    
+#include "timer.c"
+
 static int ChA1results = 0x00;
 static int ChA6results = 0x00;
 static unsigned int ChA7results = 0x00;
-static unsigned int ch_counter = 0;         
+static unsigned int ch_counter = 0;    
+static unsigned int on_time = 0; 
+static unsigned int off_time = 0;     
 
-static unsigned int minutes = 0;
-static unsigned char m = 0;
-static int data[35];
-
-static unsigned char k = 0;
 _Bool show_info = FALSE;
+_Bool summer = FALSE;
 _Bool btn_sel_pressed = FALSE;
 _Bool btn_next_pressed = FALSE;
 
 void SD16_init(void)
 {
-  warm_delay = 0;
-  cold_delay = 0;
-
-
-  BCSCTL2 |= DIVS_3;                        // SMCLK/8
-  WDTCTL = WDT_MDLY_32;                     // WDT Timer interval
+  timer_init();
 
   SD16CTL = SD16REFON +SD16SSEL_1;          // 1.2V ref, SMCLK
   SD16INCTL0 = SD16INCH_7;                  // A7+/- (calibrate)
@@ -28,9 +22,8 @@ void SD16_init(void)
   
   SD16INCTL0 |= SD16INTDLY_0;               // Interrupt on 4th sample 
   
-  SendByte(0x04, FALSE);  // Сдвигаем курсор назад.
-  
-  IE1 |= WDTIE;                             // Enable WDT interrupt
+  SendByte(0x04, FALSE);  // Сдвигаем курсор назад. 
+
 }
 
 void PrintFloat(char i, int temp)
@@ -54,6 +47,24 @@ void PrintFloat(char i, int temp)
     
     if(minus) SendByte(0x2d, TRUE);  // print '-'
         else SendByte(0x2b, TRUE);  // print '+'
+        
+    PrintStr("  ");
+}
+
+void PrintInt(char i, int temp)
+{
+    if(temp < 0)
+    {
+	    temp *= -1;
+	}
+
+	MoveCursor(i,7);
+    
+    SendByte(0x30 + (temp%10), TRUE);
+    temp /= 10;
+    SendByte(0x30 + (temp%10), TRUE);
+    temp /= 10;
+    SendByte(0x30 + (temp%10), TRUE);
 }
     
 
@@ -109,100 +120,97 @@ void __attribute__ ((interrupt(SD16_VECTOR))) SD16ISR (void)
         break; 
     }
     
+    // buttons
  
-//    SendByte(0x06, FALSE);  // Сдвигаем курсор вперед.
-
     if (btn_sel_pressed)
-    {
+    {        
+        btn_delay = 4;
         btn_sel_pressed = FALSE;
-        k = 0;
+
         show_info = !show_info;
-        MoveCursor(0,7);
-        PrintStr("        ");
-        MoveCursor(1,7);
-        PrintStr("        ");
     };
     
     if(btn_next_pressed)
     {
+        btn_delay = 4;
         btn_next_pressed = FALSE;
-        if (k < 34) k++;
-        else k = 0;
+
+        summer = !summer;
     };
     
     if(show_info)
     {
-        PrintFloat(0, k);
-        PrintFloat(1, data[k]);
+        if(P1OUT & relay) // if on
+        {
+            temp = minutes - on_time;
+            PrintInt(0, temp);
+            PrintStr("   no");
+            temp = on_time - off_time;
+            PrintInt(1, temp);
+            PrintStr("  ffo");
+        } else           // if off
+        {
+            temp = minutes - off_time;
+            PrintInt(1, temp);
+            PrintStr("  ffo");
+            temp = off_time - on_time;
+            PrintInt(0, temp);
+            PrintStr("   no");
+        };       
     } else
     {
         PrintFloat(1, ChA1results);
         PrintFloat(0, ChA6results);
-    };
-    
-// logging 
-
-    if(minutes % 1250 == 0 && m < 35)
-    {
-        data[m] = ChA1results;
-        m++;
-        MoveCursor(0, 1);
-        SendByte(0x30 + (m%10), TRUE);
-        SendByte(0x30 + (m/10), TRUE); 
-    };
-    
-    if(minutes < 65000)
-    {
-        minutes++;
-    };
-
-// end logging
         
-    if (ChA1results > 60)		// порог +6
+        MoveCursor(0, 0);
+        if (summer) SendByte(0xee, TRUE);
+            else SendByte(0x2a, TRUE);
+            
+    };
+    
+// thermo on\off       
+
+char on_temp, off_temp; 
+
+    if (summer)
+    {
+        on_temp  = 80;
+        off_temp = 40;
+    } else
+    {
+        on_temp  = 60;
+        off_temp = 30;
+    };
+
+    if ((ChA1results > on_temp) &&  // верхний порог и еще не включен
+        (!(P1OUT & relay)) &&       // и с первого пуска прошло 2 минуты
+        (minutes > 1))		 
     {                          // on
-        warm_delay++;
-        if (warm_delay > 450)  // после повышения температуры ждем 2 мин
-        {
-            cold_delay = 0;
-            warm_delay = 0;
-			P1OUT |= relay;
-//            MoveCursor(0, 1);
-//            PrintStr("no");
-        }
-
-        MoveCursor(1, 0);
-        SendByte(0xda, TRUE); // arrow down
+        on_time = minutes;
+        P1OUT |= relay;
 	};
     
-	if(ChA1results < 30)		// порог +3
+	if((ChA1results < off_temp) &&
+       (P1OUT & relay))		// нижний порог и включен
     {                          // off
-        cold_delay++;
-        if (cold_delay > 1251)  // после опускания температуры ждем 5 мин
-        {
-            cold_delay = 0;
-            warm_delay = 0;
-    		P1OUT &= ~relay;
-    		MoveCursor(0, 1);
-//            PrintStr("  ");
-        }
-
-        MoveCursor(1, 0);
-        SendByte(0xd9, TRUE); // arrow up
+        off_time = minutes;
+        P1OUT &= ~relay;
 	};
+    
+    if(!show_info) 
+    {
+        MoveCursor(1, 0);
         
+        if(ChA1results > on_temp)
+            SendByte(0xda, TRUE); // arrow down
+        if(ChA1results < off_temp)                   
+            SendByte(0xd9, TRUE); // arrow up
+    };
+
+    
+            
     
 }
 
-// Watchdog Timer interrupt service routine
-#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
-#pragma vector=WDT_VECTOR
-__interrupt void watchdog_timer(void)
-#elif defined(__GNUC__)
-void __attribute__ ((interrupt(WDT_VECTOR))) watchdog_timer (void)
-#else
-#error Compiler not supported!
-#endif
-{
-    SD16CCTL0 |= SD16SC;                      // Start SD16 conversion
-}
+
 
