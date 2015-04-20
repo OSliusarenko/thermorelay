@@ -4,13 +4,19 @@ static int ChA1results = 0x00;
 static int ChA6results = 0x00;
 static unsigned int ChA7results = 0x00;
 static unsigned int ch_counter = 0;    
-static unsigned int on_time = 0; 
-static unsigned int off_time = 0;     
+static unsigned int onofftime[3] = {0,0,0}; 
 
 _Bool show_info = FALSE;
 _Bool summer = FALSE;
 _Bool btn_sel_pressed = FALSE;
 _Bool btn_next_pressed = FALSE;
+
+void add_time(void)
+{
+        onofftime[0] = onofftime[1];
+        onofftime[1] = onofftime[2];
+        onofftime[2] = minutes;
+};
 
 void SD16_init(void)
 {
@@ -23,7 +29,7 @@ void SD16_init(void)
   SD16INCTL0 |= SD16INTDLY_0;               // Interrupt on 4th sample 
   
   SendByte(0x04, FALSE);  // Сдвигаем курсор назад. 
-
+  
 }
 
 void PrintFloat(char i, int temp)
@@ -120,7 +126,8 @@ void __attribute__ ((interrupt(SD16_VECTOR))) SD16ISR (void)
         break; 
     }
     
-    // buttons
+
+// buttons
  
     if (btn_sel_pressed)
     {        
@@ -138,36 +145,7 @@ void __attribute__ ((interrupt(SD16_VECTOR))) SD16ISR (void)
         summer = !summer;
     };
     
-    if(show_info)
-    {
-        if(P1OUT & relay) // if on
-        {
-            temp = minutes - on_time;
-            PrintInt(0, temp);
-            PrintStr("   no");
-            temp = on_time - off_time;
-            PrintInt(1, temp);
-            PrintStr("  ffo");
-        } else           // if off
-        {
-            temp = minutes - off_time;
-            PrintInt(1, temp);
-            PrintStr("  ffo");
-            temp = off_time - on_time;
-            PrintInt(0, temp);
-            PrintStr("   no");
-        };       
-    } else
-    {
-        PrintFloat(1, ChA1results);
-        PrintFloat(0, ChA6results);
-        
-        MoveCursor(0, 0);
-        if (summer) SendByte(0xee, TRUE);
-            else SendByte(0x2a, TRUE);
-            
-    };
-    
+
 // thermo on\off       
 
 char on_temp, off_temp; 
@@ -186,29 +164,54 @@ char on_temp, off_temp;
         (!(P1OUT & relay)) &&       // и с первого пуска прошло 2 минуты
         (minutes > 1))		 
     {                          // on
-        on_time = minutes;
+        add_time();
         P1OUT |= relay;
 	};
     
 	if((ChA1results < off_temp) &&
        (P1OUT & relay))		// нижний порог и включен
     {                          // off
-        off_time = minutes;
+        add_time();
         P1OUT &= ~relay;
 	};
     
-    if(!show_info) 
+// show on screen
+
+    if(show_info) // display previous on\off times
     {
-        MoveCursor(1, 0);
+        if(P1OUT & relay) // if on
+        {
+            temp = onofftime[1]-onofftime[0];
+            PrintInt(0, temp);
+            PrintStr("   no");
+            temp = onofftime[2]-onofftime[1];
+            PrintInt(1, temp);
+            PrintStr("  ffo");
+        } else           // if off
+        {
+            temp = onofftime[2]-onofftime[1];
+            PrintInt(0, temp);
+            PrintStr("   no");
+            temp = onofftime[1]-onofftime[0];
+            PrintInt(1, temp);
+            PrintStr("  ffo");
+        };       
+    } else  // normal display mode of temperatures
+    {
+        PrintFloat(1, ChA1results);
+        PrintFloat(0, ChA6results);
         
+        MoveCursor(0, 0);
+        if (summer) SendByte(0xee, TRUE); // draw 'sun'
+            else SendByte(0x2a, TRUE);  // draw *
+            
+        MoveCursor(1, 0);
         if(ChA1results > on_temp)
             SendByte(0xda, TRUE); // arrow down
         if(ChA1results < off_temp)                   
             SendByte(0xd9, TRUE); // arrow up
-    };
-
-    
             
+    };
     
 }
 
