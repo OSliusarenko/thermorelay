@@ -153,7 +153,7 @@ char on_temp, off_temp;
     if (summer)
     {
         on_temp  = 80;
-        off_temp = 40;
+        off_temp = 60;
     } else
     {
         on_temp  = 60;
