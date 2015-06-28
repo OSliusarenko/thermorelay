@@ -1,5 +1,3 @@
-#include "timer.c"
-
 static int ChA1results = 0x00;
 static int ChA6results = 0x00;
 static unsigned int ChA7results = 0x00;
@@ -10,6 +8,8 @@ _Bool show_info = FALSE;
 _Bool summer = FALSE;
 _Bool btn_sel_pressed = FALSE;
 _Bool btn_next_pressed = FALSE;
+
+#include "timer.c"
 
 void add_time(void)
 {
@@ -22,7 +22,7 @@ void SD16_init(void)
 {
   timer_init();
 
-  SD16CTL = SD16REFON +SD16SSEL_1;          // 1.2V ref, SMCLK
+  SD16CTL = SD16REFON + SD16SSEL_1 + SD16VMIDON;          // 1.2V ref, SMCLK
   SD16INCTL0 = SD16INCH_7;                  // A7+/- (calibrate)
   SD16CCTL0 = SD16SNGL + SD16IE + SD16UNI;           // Single conv, interrupt, unipolar
   
@@ -98,13 +98,13 @@ void __attribute__ ((interrupt(SD16_VECTOR))) SD16ISR (void)
         SD16AE |= SD16AE1;                  // Enable external input on A4+ 
         break; 
         
-    case 1:
+    case 1:    // inside fridge temperature
         temp -= 13653;
         temp /= 55;
 
         ChA1results = temp;             // Save CH1 results (clears IFG)
         ChA1results -= ChA7results;			// Subtracting delta
-        ChA1results -= 270; //250;			// calibrate
+        ChA1results -= 240; //250;			// calibrate
 
         SD16AE &= ~SD16AE1;                 // Disable external input A4+, A4
         SD16INCTL0 &= ~SD16INCH_4;          // Disable channel A4+/-
@@ -113,11 +113,12 @@ void __attribute__ ((interrupt(SD16_VECTOR))) SD16ISR (void)
         SD16INCTL0 |= SD16INCH_6;           // Enable channel A6+/-                          
         break; 
         
-    case 2:
+    case 2:    // outside fridge temperature
         temp -= 39361;
         ChA6results = temp;				// Save CH6 results (clears IFG)        
         ChA6results *= 2; 
         ChA6results /= 29;
+        ChA6results -= 5;              // some calibrating
 
         SD16INCTL0 &= ~SD16INCH_6;          // Disable channel A1+/-
         ch_counter = 0;
@@ -149,11 +150,18 @@ void __attribute__ ((interrupt(SD16_VECTOR))) SD16ISR (void)
 // thermo on\off       
 
 char on_temp, off_temp; 
+// if outside temp > 25 switch to  summer mode
+// if outside temp < 24 switch off summer mode. It is not good to
+// turn on compressor immediately after it stops. That's why we avoid
+// turning off summer mode (i.e. lowering limiting temperatures)
+// when the comressor is off
+    if((ChA6results > 250)) summer = TRUE;
+    if((ChA6results < 240) && (P1OUT & relay)) summer = FALSE;
 
     if (summer)
     {
         on_temp  = 80;
-        off_temp = 60;
+        off_temp = 50;
     } else
     {
         on_temp  = 60;
@@ -169,7 +177,8 @@ char on_temp, off_temp;
 	};
     
 	if((ChA1results < off_temp) &&
-       (P1OUT & relay))		// нижний порог и включен
+       (P1OUT & relay) &&
+       (minutes - onofftime[2] > 5))		// нижний порог и включен
     {                          // off
         add_time();
         P1OUT &= ~relay;

@@ -1,6 +1,6 @@
 static unsigned int minutes = 0;
 static unsigned int wd_counter = 0;
-static char btn_delay = 0; 
+static char btn_delay = 0, show_delay = 32; 
 
 void timer_init(void)
 {
@@ -29,6 +29,13 @@ void __attribute__ ((interrupt(WDT_VECTOR))) watchdog_timer (void)
     };
     
     if (btn_delay > 0) btn_delay--; // антидребезг
+    
+    if (show_delay > 0) show_delay--;
+    else
+    {
+		show_delay = 32; // some delay for alternating LCM info
+		show_info = !show_info;
+	};
     
     SD16CCTL0 |= SD16SC;                      // Start SD16 conversion
 }
